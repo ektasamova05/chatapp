@@ -79,6 +79,20 @@ exports.sendRequest = async (req, res) => {
         { model: User, as: 'receiver', attributes: ['id', 'username', 'avatar'] },
       ],
     });
+
+    // ✅ SOCKET EMIT
+const onlineUsers = require('../utils/onlineUsers');
+
+// onlineUsers.get(Number(receiverId))?.forEach(socketId => {
+//   req.io.to(socketId).emit('friend:request', {
+//     request: populated,
+//   });
+// });
+
+req.io.to(`user:${receiverId}`).emit('friend:request', {
+  request: populated,
+});
+
     res.status(201).json({ request: populated });
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
@@ -102,6 +116,14 @@ exports.respondRequest = async (req, res) => {
         defaults: { user1Id: u1, user2Id: u2 },
       });
     }
+
+    const onlineUsers = require('../utils/onlineUsers');
+
+onlineUsers.get(Number(request.senderId))?.forEach(socketId => {
+  req.io.to(socketId).emit('friend:response', {
+    request,
+  });
+});
 
     res.json({ request, message: `Request ${status}` });
   } catch (err) {

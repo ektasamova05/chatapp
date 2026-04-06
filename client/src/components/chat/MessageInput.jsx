@@ -4,7 +4,7 @@ import EmojiPicker from 'emoji-picker-react';
 import { useAuth } from '../../context/AuthContext';
 
 const MessageInput = ({ onSend, replyTo, onCancelReply, receiverId, conversationId }) => {
-  const { socket } = useAuth();
+  const { socket, user } = useAuth();
   const [text, setText] = useState('');
   const [showEmoji, setShowEmoji] = useState(false);
   const [file, setFile] = useState(null);
@@ -35,13 +35,17 @@ const MessageInput = ({ onSend, replyTo, onCancelReply, receiverId, conversation
   }, [conversationId]);
 
   const emitTyping = useCallback(() => {
-    if (!socket || !conversationId || !receiverId) return;
-    socket.emit('typing:start', { conversationId, receiverId });
+    if (!socket || !conversationId || !receiverId  || !user ) return;
+    socket.emit('typing:start', {
+       conversationId,
+       userId: user.id,
+      username: user.username,
+    });
     clearTimeout(typingTimer.current);
     typingTimer.current = setTimeout(() => {
-      socket.emit('typing:stop', { conversationId, receiverId });
+      socket.emit('typing:stop', { conversationId,});
     }, 1500);
-  }, [socket, conversationId, receiverId]);
+  }, [socket, conversationId, receiverId, user]);
 
   const handleChange = (e) => {
     setText(e.target.value);

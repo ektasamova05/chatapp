@@ -2,16 +2,25 @@ import React, { useState } from 'react';
 import Sidebar from '../components/chat/Sidebar';
 import ChatWindow from '../components/chat/ChatWindow';
 import { useChat } from '../context/ChatContext';
+import { useAuth } from '../context/AuthContext';
 
 const Home = () => {
-  const { activeConv, setActiveConv, loadMessages } = useChat();
+  const { activeConv, setActiveConv, loadMessages, clearUnread } = useChat();
+  const { socket } = useAuth();
   const [mobileShowChat, setMobileShowChat] = useState(false);
 
   const handleSelectConv = (conv) => {
-    setActiveConv(conv);
-    loadMessages(conv.id);
-    setMobileShowChat(true);
-  };
+  setActiveConv(conv);
+  loadMessages(conv.id);
+  clearUnread(conv.id);
+
+  // ✅ notify backend
+  socket?.emit('message:read', {
+    conversationId: conv.id,
+  });
+
+  setMobileShowChat(true);
+};
 
   const handleBack = () => {
     setMobileShowChat(false);

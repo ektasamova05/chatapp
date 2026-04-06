@@ -9,49 +9,95 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [socket, setSocket] = useState(null);
 
+  // useEffect(() => {
+  //   const token = localStorage.getItem('token');
+  //   if (token) {
+  //     api.get('/auth/me')
+  //       .then(res => {
+  //         setUser(res.data.user);
+  //         const s = initSocket(token);
+
+  //         // ✅ IMPORTANT: wait for connection
+  //         s.on('connect', () => {
+  //           console.log('🟢 Socket connected:', s.id);
+  //           setSocket(s);
+  //         });
+
+  //         s.on('disconnect', () => {
+  //           console.log('🔴 Socket disconnected');
+  //         });
+
+          
+  //       })
+  //       .catch(() => localStorage.removeItem('token'))
+  //       .finally(() => setLoading(false));
+  //   } else {
+  //     setLoading(false);
+  //   }
+  // }, []);
+
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      api.get('/auth/me')
-        .then(res => {
-          setUser(res.data.user);
-          const s = initSocket(token);
+  const token = localStorage.getItem('token');
 
-          // ✅ IMPORTANT: wait for connection
-          s.on('connect', () => {
-            console.log('🟢 Socket connected:', s.id);
-          });
+  if (token) {
+    api.get('/auth/me')
+      .then(res => {
+        setUser(res.data.user);
 
-          s.on('disconnect', () => {
-            console.log('🔴 Socket disconnected');
-          });
+        const s = initSocket(token);
 
-          setSocket(s);
-        })
-        .catch(() => localStorage.removeItem('token'))
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
-  }, []);
+        setSocket(s); // ✅ FIX: set immediately
+
+        s.on('connect', () => {
+          console.log('🟢 Socket connected:', s.id);
+        });
+
+        s.on('disconnect', () => {
+          console.log('🔴 Socket disconnected');
+        });
+
+      })
+      .catch(() => localStorage.removeItem('token'))
+      .finally(() => setLoading(false));
+  } else {
+    setLoading(false);
+  }
+}, []);
+  // const login = (token, userData) => {
+  //   localStorage.setItem('token', token);
+  //   setUser(userData);
+  //   const s = initSocket(token);
+
+  //    // ✅ same fix here
+  //   s.on('connect', () => {
+  //     console.log('🟢 Socket connected:', s.id);
+  //     // s.emit('join', userData.id);
+
+  //     setSocket(s);
+  //   });
+
+  //   s.on('disconnect', () => {
+  //     console.log('🔴 Socket disconnected');
+  //   });
+  // };
 
   const login = (token, userData) => {
-    localStorage.setItem('token', token);
-    setUser(userData);
-    const s = initSocket(token);
+  localStorage.setItem('token', token);
+  setUser(userData);
 
-     // ✅ same fix here
-    s.on('connect', () => {
-      console.log('🟢 Socket connected:', s.id);
-    });
+  const s = initSocket(token);
 
-    s.on('disconnect', () => {
-      console.log('🔴 Socket disconnected');
-    });
+  setSocket(s); // ✅ FIX: set immediately
 
+  s.on('connect', () => {
+    console.log('🟢 Socket connected:', s.id);
+  });
 
-    setSocket(s);
-  };
+  s.on('disconnect', () => {
+    console.log('🔴 Socket disconnected');
+  });
+};
+
 
   const logout = () => {
     localStorage.removeItem('token');

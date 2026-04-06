@@ -10,7 +10,7 @@ import { formatConversationDate, truncate } from '../../utils/helpers';
 
 const Sidebar = ({ onSelectConv }) => {
   const { user, logout, socket } = useAuth();
-  const { conversations, setConversations, pendingRequests, friends, loadConversations, setPendingRequests, loadFriends, activeConv } = useChat();
+  const { conversations, pendingRequests, friends, loadConversations, setPendingRequests, loadFriends, activeConv, setActiveConv, clearUnread } = useChat();
 
   const [tab, setTab] = useState('chats');
   const [search, setSearch] = useState('');
@@ -22,15 +22,9 @@ const Sidebar = ({ onSelectConv }) => {
   useEffect(() => {
     if (!socket) return;
 
-    const handleRead = ({ conversationId }) => {
-      setConversations(prev =>
-        prev.map(c => c.id === conversationId ? { ...c, unreadCount: 0 } : c)
-      );
-    };
-
-    const handleNewRequest = ({ request }) => {
-      setPendingRequests((prev) => [request, ...prev]);
-    };
+    // const handleNewRequest = ({ request }) => {
+    //   setPendingRequests((prev) => [request, ...prev]);
+    // };
 
     const handleResponse = ({ request }) => {
       setPendingRequests((prev) => prev.filter((r) => r.id !== request.id));
@@ -40,16 +34,12 @@ const Sidebar = ({ onSelectConv }) => {
       }
     };
 
-    socket.on('message:read', handleRead);
-    socket.on('friend:request', handleNewRequest);
     socket.on('friend:response', handleResponse);
-
+    
     return () => {
-      socket.off('message:read', handleRead);
-      socket.off('friend:request', handleNewRequest);
       socket.off('friend:response', handleResponse);
     };
-  }, [socket]);
+  }, [socket, loadConversations, loadFriends, setPendingRequests]);
 
   useEffect(() => {
     const fetchPending = async () => {
@@ -77,7 +67,7 @@ const Sidebar = ({ onSelectConv }) => {
   const sendRequest = async (userId) => {
     try {
       const res = await api.post('/friends/request', { receiverId: userId });
-      socket?.emit('friend:request', { request: res.data.request, receiverId: userId });
+      // socket?.emit('friend:request', { request: res.data.request, receiverId: userId });
       toast.success('Request sent!');
       setSearchResults(prev => prev.map(u => u.id === userId
         ? { ...u, friendStatus: 'pending', isSender: true } : u));
@@ -215,11 +205,21 @@ const Sidebar = ({ onSelectConv }) => {
                 </div>
               ) : conversations.map(conv => (
                 <div key={conv.id}
-                  onClick={() => {
+                 onClick={() => {
+                    setActiveConv(conv); 
                     onSelectConv(conv);
+                    clearUnread(conv.id);
+
+                    // // ✅ instant UI update
+                    // setConversations(prev =>
+                    //   prev.map(c =>
+                    //     c.id === conv.id ? { ...c, unreadCount: 0 } : c
+                    //   )
+                    // );
+
+                    // ✅ notify backend
                     socket?.emit('message:read', {
                       conversationId: conv.id,
-                      receiverId: conv.otherUser?.id,
                     });
                   }}
                   className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all duration-200 ripple
@@ -238,9 +238,15 @@ const Sidebar = ({ onSelectConv }) => {
                       <p className="text-xs text-[var(--muted)] truncate">
                         {conv.lastMessage?.content ? truncate(conv.lastMessage.content, 30) : 'No messages'}
                       </p>
-                      {conv.unreadCount > 0 && (
-                        <span className="badge">{conv.unreadCount}</span>
-                      )}
+                        {/* {conv.unreadCount > 0 && (
+                      <span className="badge">
+                        {conv.unreadCount}
+                      </span> */}
+                     {activeConv?.id !== conv.id && (conv.unreadCount ?? 0) > 0 && (
+                      <span className="badge">
+                        {conv.unreadCount ?? 0}
+                      </span>
+                    )}
                     </div>
                   </div>
                 </div>

@@ -38,6 +38,61 @@ exports.getConversations = async (req, res) => {
   }
 };
 
+// exports.getMessages = async (req, res) => {
+//   const { conversationId } = req.params;
+//   const { page = 1, limit = 50 } = req.query;
+
+//   try {
+//     const messages = await Message.findAll({
+//       where: {
+//         conversationId,
+//         deletedForEveryone: false,
+//         [Op.not]: [{ deletedForSender: true, senderId: req.user.id }],
+//       },
+//       include: [
+//         { model: User, as: 'sender', attributes: ['id', 'username', 'avatar'] },
+//         // { model: Message, as: 'replyTo', include: [{ model: User, as: 'sender', attributes: ['id', 'username'] }] },
+//       ],
+//       order: [['createdAt', 'DESC']],
+//       limit: parseInt(limit),
+//       offset: (parseInt(page) - 1) * parseInt(limit),
+//     });
+
+//       // ✅ FIX: mark all as read in ONE query
+//     await Message.update(
+//       { isRead: true },
+//       {
+//         where: {
+//           conversationId,
+//           senderId: { [Op.ne]: req.user.id },
+//           isRead: false
+//         }
+//       }
+//     );
+
+//     // ✅ emit read event (for realtime unread fix)
+//     req.io.to(`conv:${conversationId}`).emit('message:read', {
+//       conversationId
+//     });
+
+//     // const messagesToUpdate = await Message.findAll({
+//     //   where: { conversationId, senderId: { [Op.ne]: req.user.id } },
+//     // });
+//     // for (let msg of messagesToUpdate) {
+//     //   let readBy = msg.readBy || [];
+//     //   if (!readBy.includes(req.user.id)) {
+//     //     readBy.push(req.user.id);
+//     //     await msg.update({ readBy });
+//     //   }
+//     // }
+
+//     res.json({ messages: messages.reverse() });
+//   } catch (err) {
+//     res.status(500).json({ message: 'Server error', error: err.message });
+//   }
+// };
+
+
 exports.getMessages = async (req, res) => {
   const { conversationId } = req.params;
   const { page = 1, limit = 50 } = req.query;
@@ -47,63 +102,154 @@ exports.getMessages = async (req, res) => {
       where: {
         conversationId,
         deletedForEveryone: false,
-        [Op.not]: [{ deletedForSender: true, senderId: req.user.id }],
+        [Op.or]: [
+          { deletedForSender: false },
+          { senderId: { [Op.ne]: req.user.id } }
+        ]
       },
       include: [
-        { model: User, as: 'sender', attributes: ['id', 'username', 'avatar'] },
-        { model: Message, as: 'replyTo', include: [{ model: User, as: 'sender', attributes: ['id', 'username'] }] },
+        { model: User, as: 'sender', attributes: ['id', 'username', 'avatar'] }
       ],
       order: [['createdAt', 'DESC']],
       limit: parseInt(limit),
       offset: (parseInt(page) - 1) * parseInt(limit),
     });
 
-    const messagesToUpdate = await Message.findAll({
-      where: { conversationId, senderId: { [Op.ne]: req.user.id } },
-    });
-    for (let msg of messagesToUpdate) {
-      let readBy = msg.readBy || [];
-      if (!readBy.includes(req.user.id)) {
-        readBy.push(req.user.id);
-        await msg.update({ readBy });
+    // ✅ mark as read (FAST + CORRECT)
+    await Message.update(
+      { isRead: true },
+      {
+        where: {
+          conversationId,
+          senderId: { [Op.ne]: req.user.id },
+          isRead: false
+        }
       }
-    }
+    );
+
+    // ✅ realtime read update
+    req.io.to(`conv:${conversationId}`).emit('message:read', {
+      conversationId
+    });
 
     res.json({ messages: messages.reverse() });
+
   } catch (err) {
+    console.log("❌ GET MESSAGES ERROR:", err); // IMPORTANT
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 };
 
+
 exports.sendMessage = async (req, res) => {
   const { receiverId, content, type = 'text', replyToId } = req.body;
+
   try {
     const conv = await getOrCreateConversation(req.user.id, receiverId);
+
     const msgData = {
-      conversationId: conv.id, senderId: req.user.id,
-      content, type, replyToId: replyToId || null, readBy: [req.user.id],
+      conversationId: conv.id,
+      senderId: req.user.id,
+      content,
+      type,
+      replyToId: replyToId || null,
+      readBy: [req.user.id],
     };
+
     if (req.file) {
       msgData.fileUrl = `/${req.file.path}`;
       msgData.fileName = req.file.originalname;
       msgData.fileSize = req.file.size;
       msgData.type = req.file.mimetype.startsWith('image/') ? 'image'
         : req.file.mimetype.startsWith('video/') ? 'video'
-        : req.file.mimetype.startsWith('audio/') ? 'voice' : 'file';
+        : req.file.mimetype.startsWith('audio/') ? 'voice'
+        : 'file';
     }
+
     const message = await Message.create(msgData);
-    await conv.update({ lastMessageId: message.id, lastMessageAt: new Date() });
+
+    await conv.update({
+      lastMessageId: message.id,
+      lastMessageAt: new Date(),
+    });
+
     const populated = await Message.findByPk(message.id, {
       include: [
         { model: User, as: 'sender', attributes: ['id', 'username', 'avatar'] },
-        { model: Message, as: 'replyTo', include: [{ model: User, as: 'sender', attributes: ['id', 'username'] }] },
+        {
+          model: Message,
+          as: 'replyTo',
+          include: [{ model: User, as: 'sender', attributes: ['id', 'username'] }]
+        },
       ],
     });
-    res.status(201).json({ message: populated, conversationId: conv.id });
+
+    // ✅ 🔥 REALTIME FIX START
+
+    // 1️⃣ send to conversation room (chat open case)
+    req.io.to(`conv:${conv.id}`).emit('message:new', {
+      message: populated,
+      conversationId: conv.id,
+    });
+
+    // 2️⃣ send to receiver directly (chat CLOSED → unread count update)
+    req.io.to(`user:${receiverId}`).emit('message:new', {
+      message: populated,
+      conversationId: conv.id,
+    });
+
+    // ✅ 🔥 REALTIME FIX END
+
+    res.status(201).json({
+      message: populated,
+      conversationId: conv.id,
+    });
+
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    console.log("❌ SEND MESSAGE ERROR:", err);
+    res.status(500).json({
+      message: 'Server error',
+      error: err.message
+    });
   }
 };
+
+// exports.sendMessage = async (req, res) => {
+//   const { receiverId, content, type = 'text', replyToId } = req.body;
+//   try {
+//     const conv = await getOrCreateConversation(req.user.id, receiverId);
+//     const msgData = {
+//       conversationId: conv.id, senderId: req.user.id,
+//       content, type, replyToId: replyToId || null, readBy: [req.user.id],
+//     };
+//     if (req.file) {
+//       msgData.fileUrl = `/${req.file.path}`;
+//       msgData.fileName = req.file.originalname;
+//       msgData.fileSize = req.file.size;
+//       msgData.type = req.file.mimetype.startsWith('image/') ? 'image'
+//         : req.file.mimetype.startsWith('video/') ? 'video'
+//         : req.file.mimetype.startsWith('audio/') ? 'voice' : 'file';
+//     }
+//     const message = await Message.create(msgData);
+//     await conv.update({ lastMessageId: message.id, lastMessageAt: new Date() });
+//     const populated = await Message.findByPk(message.id, {
+
+
+
+//       include: [
+//         { model: User, as: 'sender', attributes: ['id', 'username', 'avatar'] },
+//         { model: Message, as: 'replyTo', include: [{ model: User, as: 'sender', attributes: ['id', 'username'] }] },
+//       ],
+
+
+//     }
+  
+//   );
+//     res.status(201).json({ message: populated, conversationId: conv.id });
+//   } catch (err) {
+//     res.status(500).json({ message: 'Server error', error: err.message });
+//   }
+// };
 
 // ===================== SAVE MISSED CALL =====================
 exports.saveMissedCall = async (req, res) => {

@@ -1,8 +1,9 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || '/api',
-  withCredentials: true,
+ // baseURL: process.env.REACT_APP_API_URL || '/api',
+  baseURL: 'http://localhost:5000/api',
+ withCredentials: true,
 });
 
 api.interceptors.request.use((config) => {

@@ -51,10 +51,10 @@ const ChatWindow = ({ conv, onBack }) => {
     if (convId) {
       loadMessages(convId);
       clearUnread(convId);
-      socket?.emit('conversation:join', convId);
+      socket?.emit('conversation:join', `conv:${convId}`);
       socket?.emit('message:read', { conversationId: convId, receiverId: otherUser?.id });
     }
-    return () => { if (convId) socket?.emit('conversation:leave', convId); };
+    return () => { if (convId) socket?.emit('conversation:leave', `conv:${convId}`); };
   }, [convId]);
 
   useEffect(() => {
@@ -499,7 +499,6 @@ const ChatWindow = ({ conv, onBack }) => {
 };
 
 export default ChatWindow;
-
 
 
 
