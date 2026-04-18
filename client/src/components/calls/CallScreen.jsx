@@ -20,6 +20,7 @@ const CallScreen = ({ callData, socket, currentUser, onEnd }) => {
 
   const localVideoRef = useRef();
   const remoteVideoRef = useRef();
+  const remoteAudioRef = useRef();
   const peerConnRef = useRef();
   const localStreamRef = useRef();
   const timerRef = useRef();
@@ -72,7 +73,18 @@ const CallScreen = ({ callData, socket, currentUser, onEnd }) => {
     const pc = new RTCPeerConnection(ICE_SERVERS);
     peerConnRef.current = pc;
     stream.getTracks().forEach(track => pc.addTrack(track, stream));
-    pc.ontrack = (e) => { if (remoteVideoRef.current) remoteVideoRef.current.srcObject = e.streams[0]; };
+    pc.ontrack = (e) => {
+      const [remoteStream] = e.streams;
+      if (!remoteStream) return;
+
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = remoteStream;
+      }
+
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = remoteStream;
+      }
+    };
     pc.onicecandidate = (e) => {
       if (e.candidate) socket?.emit('call:ice-candidate', { receiverId: peer.id, candidate: e.candidate });
     };
@@ -136,6 +148,9 @@ const CallScreen = ({ callData, socket, currentUser, onEnd }) => {
   const cleanup = () => {
     clearInterval(timerRef.current);
     localStreamRef.current?.getTracks().forEach(t => t.stop());
+    if (localVideoRef.current) localVideoRef.current.srcObject = null;
+    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+    if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null;
     peerConnRef.current?.close();
   };
 
@@ -200,6 +215,7 @@ const CallScreen = ({ callData, socket, currentUser, onEnd }) => {
               border-2 border-white/20 shadow-2xl" />
         </>
       )}
+      <audio ref={remoteAudioRef} autoPlay playsInline muted={!speakerOn} />
 
       {/* Peer info */}
       <div className="relative z-10 flex flex-col items-center pt-16 pb-6 flex-1">
@@ -320,5 +336,4 @@ const CallScreen = ({ callData, socket, currentUser, onEnd }) => {
 };
 
 export default CallScreen;
-
 

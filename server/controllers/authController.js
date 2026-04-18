@@ -1,9 +1,20 @@
 const jwt = require('jsonwebtoken');
+const fs = require('fs');
+const path = require('path');
 const { User } = require('../models');
 const { validationResult } = require('express-validator');
 
 const generateToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN });
+
+const deleteAvatarFile = (avatarPath) => {
+  if (!avatarPath || typeof avatarPath !== 'string' || !avatarPath.startsWith('/uploads/')) return;
+
+  const normalizedPath = avatarPath.replace(/^\/+/, '');
+  const absolutePath = path.join(__dirname, '..', normalizedPath);
+
+  fs.promises.unlink(absolutePath).catch(() => {});
+};
 
 exports.register = async (req, res) => {
   const errors = validationResult(req);
@@ -50,7 +61,7 @@ exports.getMe = async (req, res) => {
 };
 
 exports.updateProfile = async (req, res) => {
-  const { username, bio, phone } = req.body;
+  const { username, bio, phone, removeAvatar } = req.body;
   try {
     if (username && username !== req.user.username) {
       const taken = await User.findOne({ where: { username } });
@@ -58,12 +69,19 @@ exports.updateProfile = async (req, res) => {
     }
 
     const updates = {};
+    const shouldRemoveAvatar = removeAvatar === 'true' || removeAvatar === true;
+    const previousAvatar = req.user.avatar;
+
     if (username) updates.username = username;
     if (bio !== undefined) updates.bio = bio;
     if (phone !== undefined) updates.phone = phone;
-    if (req.file) updates.avatar = `/${req.file.path}`;
+    if (req.file) updates.avatar = `/${req.file.path.replace(/\\/g, '/')}`;
+    else if (shouldRemoveAvatar) updates.avatar = null;
 
     await req.user.update(updates);
+    if ((req.file || shouldRemoveAvatar) && previousAvatar && previousAvatar !== req.user.avatar) {
+      deleteAvatarFile(previousAvatar);
+    }
     res.json({ user: req.user });
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });

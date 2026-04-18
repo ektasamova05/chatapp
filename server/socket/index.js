@@ -35,8 +35,11 @@ module.exports = (io) => {
     socket.broadcast.emit('user:online', { userId });
     console.log(`✅ User connected: ${socket.user.username}`);
 
-    // ✅ helper to get sockets by any user id
-    const getSockets = (id) => onlineUsers.get(Number(id));
+    // ✅ helper to get sockets by user id (UUID-safe)
+    const getSockets = (id) => {
+      if (id === null || id === undefined) return null;
+      return onlineUsers.get(String(id));
+    };
 
     socket.on('conversation:join', (room) =>{
       console.log("👉 Joining room:", room);

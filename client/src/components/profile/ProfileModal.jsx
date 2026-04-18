@@ -13,6 +13,7 @@ const ProfileModal = ({ user, isOwn = false, onClose }) => {
   const [form, setForm] = useState({ username: user?.username || '', bio: user?.bio || '', phone: user?.phone || '' });
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(null);
+  const [removeAvatar, setRemoveAvatar] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPassForm, setShowPassForm] = useState(false);
   const [passForm, setPassForm] = useState({ currentPassword: '', newPassword: '', confirmNew: '' });
@@ -34,13 +35,36 @@ const ProfileModal = ({ user, isOwn = false, onClose }) => {
     }
   }, [user?.id, isOwn]);
 
+  useEffect(() => {
+    setForm({ username: user?.username || '', bio: user?.bio || '', phone: user?.phone || '' });
+    setAvatarFile(null);
+    setAvatarPreview(null);
+    setRemoveAvatar(false);
+  }, [user]);
+
   const handleAvatarChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     setAvatarFile(file);
+    setRemoveAvatar(false);
     const reader = new FileReader();
     reader.onload = () => setAvatarPreview(reader.result);
     reader.readAsDataURL(file);
+  };
+
+  const handleRemoveAvatar = () => {
+    setAvatarFile(null);
+    setAvatarPreview(null);
+    setRemoveAvatar(true);
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const resetEditingState = () => {
+    setEditing(false);
+    setAvatarFile(null);
+    setAvatarPreview(null);
+    setRemoveAvatar(false);
+    if (fileRef.current) fileRef.current.value = '';
   };
 
   const handleSave = async () => {
@@ -51,12 +75,12 @@ const ProfileModal = ({ user, isOwn = false, onClose }) => {
       fd.append('bio', form.bio);
       fd.append('phone', form.phone);
       if (avatarFile) fd.append('avatar', avatarFile);
+      if (removeAvatar) fd.append('removeAvatar', 'true');
       const res = await api.put('/auth/profile', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       updateUser(res.data.user);
+      setFullUser(res.data.user);
       toast.success('Profile updated!');
-      setEditing(false);
-      setAvatarFile(null);
-      setAvatarPreview(null);
+      resetEditingState();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Update failed');
     } finally {
@@ -84,8 +108,9 @@ const ProfileModal = ({ user, isOwn = false, onClose }) => {
   };
 
   // ✅ use fullUser for display (has all fields)
-  const displayUser = { ...fullUser, avatar: avatarPreview || fullUser?.avatar };
-  const bigAvatarUrl = avatarPreview || (fullUser?.avatar ? getAvatarUrl(fullUser.avatar) : null);
+  const effectiveAvatar = removeAvatar ? null : (avatarPreview || fullUser?.avatar);
+  const displayUser = { ...fullUser, avatar: effectiveAvatar };
+  const bigAvatarUrl = effectiveAvatar ? getAvatarUrl(effectiveAvatar) : null;
 
   return (
     <>
@@ -106,12 +131,22 @@ const ProfileModal = ({ user, isOwn = false, onClose }) => {
               <X size={16} />
             </button>
             {isOwn && editing && (
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="absolute bottom-3 right-3 p-1.5 bg-black/40 hover:bg-black/60 rounded-lg text-white transition-colors flex items-center gap-1.5 text-xs"
-              >
-                <Camera size={14} /> Change Photo
-              </button>
+              <div className="absolute bottom-3 right-3 flex gap-2">
+                {(fullUser?.avatar || avatarPreview) && !removeAvatar && (
+                  <button
+                    onClick={handleRemoveAvatar}
+                    className="p-1.5 bg-red-500/80 hover:bg-red-500 rounded-lg text-white transition-colors text-xs"
+                  >
+                    Remove Photo
+                  </button>
+                )}
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  className="p-1.5 bg-black/40 hover:bg-black/60 rounded-lg text-white transition-colors flex items-center gap-1.5 text-xs"
+                >
+                  <Camera size={14} /> Change Photo
+                </button>
+              </div>
             )}
             <input ref={fileRef} type="file" accept="image/*" hidden onChange={handleAvatarChange} />
           </div>
@@ -152,7 +187,7 @@ const ProfileModal = ({ user, isOwn = false, onClose }) => {
               {isOwn && editing && (
                 <div className="flex gap-2">
                   <button
-                    onClick={() => { setEditing(false); setAvatarFile(null); setAvatarPreview(null); }}
+                    onClick={resetEditingState}
                     className="btn-ghost text-sm py-2"
                   >
                     Cancel
